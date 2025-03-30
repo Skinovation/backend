@@ -40,7 +40,7 @@ class RegisterController extends BaseController
                 'user' => $user,
                 'token' => [
                     'access_token' => $token,
-                    'token_type' => 'JWT',
+                    'token_type' => 'Barer Token',
                     'expires_in' => config('jwt.ttl') * 60,
                 ],
             ], 'Registrasi berhasil');
