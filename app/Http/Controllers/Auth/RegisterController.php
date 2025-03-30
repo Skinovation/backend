@@ -2,13 +2,18 @@
 
 namespace App\Http\Controllers\Auth;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\BaseController;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Auth\AuthenticationException;
 use Throwable;
 
-class RegisterController extends Controller
+/**
+ * Class RegisterController
+ *
+ * @package App\Http\Controllers\Auth
+ */
+class RegisterController extends BaseController
 {
     /**
      * Handle the incoming request.
@@ -31,31 +36,22 @@ class RegisterController extends Controller
                 ], 401);
             }
             $user = auth()->guard('api')->user();
-            return response()->json([
-                'success' => true,
+            return $this->sendResponse([
                 'user' => $user,
                 'token' => [
                     'access_token' => $token,
                     'token_type' => 'JWT',
                     'expires_in' => config('jwt.ttl') * 60,
                 ],
-            ]);
+            ], 'Registrasi berhasil');
         } catch (ValidationException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validasi gagal',
-                'errors' => $e->errors(),
-            ], 422);
-        } catch (AuthenticationException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Autentikasi gagal: ' . $e->getMessage(),
-            ], 401);
-        } catch (Throwable $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Terjadi kesalahan: ' . $e->getMessage(),
-            ], 500);
+            return $this->sendError('Validasi gagal', $e->errors(), 422);
+        }
+        catch (AuthenticationException $e) {
+            return $this->sendError('Autentikasi gagal', ['error' => $e->getMessage()], 401);
+        }
+        catch (Throwable $e) {
+            return $this->sendError('Gagal mendaftar, silakan coba lagi', ['error' => $e->getMessage()], 500);
         }
     }
 }
