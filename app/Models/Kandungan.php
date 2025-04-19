@@ -6,8 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 
 class Kandungan extends Model
 {
-    protected $table = 'kandungans';
-
     protected $fillable = [
         'name',
         'fungsi',

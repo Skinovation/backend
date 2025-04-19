@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use App\Models\Resiko;
 use App\Models\Kandungan;
-
+use App\Models\KandunganProduk;
 
 
 class AnalyzeSkincareController extends BaseController
@@ -99,9 +99,9 @@ class AnalyzeSkincareController extends BaseController
                     );
 
                     // Simpan pivot
-                    DB::table('kandungan_produk')->insert([
+                    KandunganProduk::create([
                         'produks_id' => $produk->id,
-                        'kandungan_id' => $kandungan->id
+                        'kandungans_id' => $kandungan->id
                     ]);
                 }
             }
@@ -130,13 +130,18 @@ class AnalyzeSkincareController extends BaseController
                     foreach ($ingredients as $ing) {
                         $namaBahan = trim($ing);
                         $kandungan = Kandungan::firstOrCreate(
-                            ['nama' => $namaBahan],
-                            ['fungsi' => 'Unknown', 'kategoris_id' => $rekomKategori->id]
+                            ['name' => $namaBahan],
+                            [[
+                                'fungsi' => 'Unknown',
+                                'kategoris_id' => $rekomKategori->id,
+                                'resiko_id' => 9
+                            ]
+                            ]
                         );
 
-                        DB::table('kandungan_produk')->updateOrInsert([
+                        KandunganProduk::firstOrCreate([
                             'produks_id' => $rekomProduk->id,
-                            'kandungan_id' => $kandungan->id
+                            'kandungans_id' => $kandungan->id
                         ]);
                     }
                 }

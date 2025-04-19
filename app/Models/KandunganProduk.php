@@ -9,7 +9,7 @@ class KandunganProduk extends Model
 
     protected $fillable = [
         'produks_id',
-        'kandungan_id'
+        'kandungans_id'
     ];
 
     public function kategori()
