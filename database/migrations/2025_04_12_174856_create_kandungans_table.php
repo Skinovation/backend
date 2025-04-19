@@ -14,8 +14,8 @@ return new class extends Migration
         Schema::create('kandungans', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('fungsi');
-            $table->foreignId('resiko_id')->constrained('resikos')->onDelete('cascade');
+            $table->string('fungsi')->nullable();
+            $table->foreignId('resiko_id')->constrained('resikos')->onDelete('cascade')->onUpdate;
             $table->timestamps();
         });
     }
