@@ -18,5 +18,5 @@ Route::group(['prefix' => 'auth'], function () {
 });
 
 Route::group(['prefix' => 'analyze'], function () {
-    Route::post('/skincare', AnalyzeSkincareController::class)->name('analyze.skincare');
+    Route::post('/skincare', [AnalyzeSkincareController::class, 'Analyze'])->name('analyze.skincare');
 });
