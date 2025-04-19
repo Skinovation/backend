@@ -9,8 +9,11 @@ use App\Models\Produk;
 use App\Models\AnalisisProduk;
 use App\Models\Kategori;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 use App\Models\Resiko;
 use App\Models\Kandungan;
+
+
 
 class AnalyzeSkincareController extends BaseController
 {
@@ -37,15 +40,12 @@ class AnalyzeSkincareController extends BaseController
             }
 
             // Kirim data ke API HuggingFace
-            if ($request->hasFile('image')) {
-                $response = Http::attach(
-                    'image', file_get_contents($fullPath), basename($fullPath)
-                )->post('https://huggingface.co/spaces/Maulidaaa/skicare_analyze', []);
-            } else {
-                $response = Http::asForm()->post('https://huggingface.co/spaces/Maulidaaa/skicare_analyze', [
+            $response = $request->hasFile('image')
+                ? Http::attach('image', file_get_contents($fullPath), basename($fullPath))
+                    ->post('https://huggingface.co/spaces/Maulidaaa/skicare_analyze', [])
+                : Http::asForm()->post('https://huggingface.co/spaces/Maulidaaa/skicare_analyze', [
                     'ingredients' => $request->input('ingredients')
                 ]);
-            }
 
             if (!$response->successful()) {
                 return $this->sendError('Gagal mengirim data ke API lain', [
@@ -56,20 +56,19 @@ class AnalyzeSkincareController extends BaseController
 
             $data = $response->json();
 
-            // Cek dan buat kategori
-            $category = $request->input('product_category');
-            $kategori = Kategori::firstOrCreate(['name' => $category]);
+            // Simpan kategori produk
+            $kategori = Kategori::firstOrCreate(['nama' => $request->input('product_category')]);
 
             // Simpan produk utama
             $produk = Produk::create([
-                'name' => $request->input('product_name'),
+                'nama' => $request->input('product_name'),
                 'brand' => $request->input('product_brand'),
-                'kategoris_id' => $kategori->id,
+                'kategori_id' => $kategori->id,
             ]);
 
             $user = auth()->guard('api')->user();
 
-            // Simpan analisis efek setelah penggunaan
+            // Simpan analisis efek
             $analisis = $data['Predicted After Use Effects']['description'] ?? 'Tidak ada efek terdeteksi';
             AnalisisProduk::create([
                 'user_id' => $user->id,
@@ -77,46 +76,61 @@ class AnalyzeSkincareController extends BaseController
                 'analisis' => $analisis,
             ]);
 
-            // Simpan kandungan & resiko
+            // Simpan kandungan dan pivot-nya
             if (!empty($data['Ingredient Analysis'])) {
                 foreach ($data['Ingredient Analysis'] as $item) {
                     $resiko = Resiko::firstOrCreate(
-                        ['description' => $item['Risk Description']],
-                        ['level' => $item['Risk Level']]
+                        ['deskripsi' => $item['Risk Description']],
+                        ['tingkat_resiko' => $item['Risk Level']]
                     );
 
-                    Kandungan::updateOrCreate(
-                        ['produk_id' => $produk->id, 'name' => $item['Ingredient Name']],
+                    $kandungan = Kandungan::firstOrCreate(
+                        ['nama' => $item['Ingredient Name']],
                         [
                             'fungsi' => $item['Function'],
-                            'resiko_id' => $resiko->id
+                            'kategori_id' => $kategori->id
                         ]
                     );
+
+                    // Simpan pivot
+                    DB::table('kandungan_produk')->insert([
+                        'produks_id' => $produk->id,
+                        'kandungan_id' => $kandungan->id
+                    ]);
                 }
             }
 
-            // Simpan rekomendasi produk
+            // Simpan rekomendasi produk dan kandungannya
             if (!empty($data['Product Recommendations'])) {
                 foreach ($data['Product Recommendations'] as $rekom) {
-                    $rekomKategori = Kategori::firstOrCreate(['name' => $rekom['type']]);
+                    $rekomKategori = Kategori::firstOrCreate(['nama' => $rekom['type']]);
 
                     $rekomProduk = Produk::updateOrCreate(
-                        ['name' => $rekom['name']],
+                        ['nama' => $rekom['name']],
                         [
                             'brand' => $rekom['brand'],
-                            'kategoris_id' => $rekomKategori->id,
+                            'kategori_id' => $rekomKategori->id
                         ]
                     );
 
-                    // Simpan kandungan dari ingredients (dipisah per koma)
+                    // Simpan hubungan rekomendasi
+                    \App\Models\RekomendasiProduk::firstOrCreate([
+                        'produk_id' => $produk->id,
+                        'produk_alternatif_id' => $rekomProduk->id
+                    ]);
+
+                    // Simpan kandungan dari rekomendasi
                     $ingredients = explode(',', $rekom['ingredients']);
                     foreach ($ingredients as $ing) {
                         $namaBahan = trim($ing);
-                        Kandungan::firstOrCreate([
-                            'produk_id' => $rekomProduk->id,
-                            'name' => $namaBahan,
-                            'fungsi' => 'Unknown',
-                            'resiko_id' => null
+                        $kandungan = Kandungan::firstOrCreate(
+                            ['nama' => $namaBahan],
+                            ['fungsi' => 'Unknown', 'kategori_id' => $rekomKategori->id]
+                        );
+
+                        DB::table('kandungan_produk')->updateOrInsert([
+                            'produks_id' => $rekomProduk->id,
+                            'kandungan_id' => $kandungan->id
                         ]);
                     }
                 }
@@ -130,4 +144,5 @@ class AnalyzeSkincareController extends BaseController
             ], 500);
         }
     }
+
 }
