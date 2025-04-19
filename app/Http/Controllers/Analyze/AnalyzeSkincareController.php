@@ -158,10 +158,10 @@ class AnalyzeSkincareController extends BaseController
             if (isset($resultData['Predicted After Use Effects'])) {
                 unset($resultData['Predicted After Use Effects']['skor']);
                 unset($resultData['Predicted After Use Effects']['description']);
-                unset($resultData['Predicted After Use Effects']['label']);
+                
             }
 
-            $label = $resultData['Predicted After Use Effects']['label'] ?? 'Tidak ada efek terdeteksi';
+            $label = $resultData['Predicted After Use Effects']['labels'];
 
             return $this->sendResponse([
                 'produk' => [
