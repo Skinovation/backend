@@ -13,6 +13,9 @@ return new class extends Migration
     {
         Schema::create('rekomendasi_produks', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('produk_id')->constrained('produks')->onDelete('cascade');
+            $table->foreignId('produk_alternatif_id')->constrained('produks')->onDelete('cascade');
             $table->timestamps();
         });
     }

@@ -15,8 +15,6 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('brand');
-            $table->foreignId('kandungans_id')->constrained('kandungans')->onDelete('cascade');
-            $table->foreignId('resikos_id')->constrained('resikos')->onDelete('cascade');
             $table->foreignId('kategoris_id')->constrained('kategoris')->onDelete('cascade');
             $table->timestamps();
         });
