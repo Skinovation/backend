@@ -9,9 +9,9 @@ class Kandungan extends Model
     protected $table = 'kandungans';
 
     protected $fillable = [
-        'nama',
+        'name',
         'fungsi',
-        'kategori_id',
+        'resiko_id',
     ];
 
     public function kategori()

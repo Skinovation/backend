@@ -10,6 +10,6 @@ class Produk extends Model
     protected $fillable = [
         'nama',
         'brand',
-        'kandungans_id',
+        'kategoris_id',
     ];
 }

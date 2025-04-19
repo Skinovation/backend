@@ -41,9 +41,11 @@ class AnalyzeSkincareController extends BaseController
 
             // Kirim data ke API HuggingFace
             $response = $request->hasFile('image')
-                ? Http::attach('image', file_get_contents($fullPath), basename($fullPath))
+                ? Http::timeout(60)
+                    ->attach('image', file_get_contents($fullPath), basename($fullPath))
                     ->post('https://maulidaaa-skincare.hf.space/analyze', [])
-                : Http::asForm()->post('https://maulidaaa-skincare.hf.space/analyze', [
+                : Http::timeout(60)
+                    ->asForm()->post('https://maulidaaa-skincare.hf.space/analyze', [
                     'ingredients' => $request->input('ingredients')
                 ]);
 
@@ -63,7 +65,7 @@ class AnalyzeSkincareController extends BaseController
             $produk = Produk::create([
                 'nama' => $request->input('product_name'),
                 'brand' => $request->input('product_brand'),
-                'kategori_id' => $kategori->id,
+                'kategoris_id' => $kategori->id,
             ]);
 
             $user = auth()->guard('api')->user();
@@ -81,14 +83,18 @@ class AnalyzeSkincareController extends BaseController
                 foreach ($data['Ingredient Analysis'] as $item) {
                     $resiko = Resiko::firstOrCreate(
                         ['deskripsi' => $item['Risk Description']],
-                        ['tingkat_resiko' => $item['Risk Level']]
+                        [
+                            'tingkat_resiko' => $item['Risk Level'],
+                            'code' => $item['Restriction']
+                        ]
                     );
 
                     $kandungan = Kandungan::firstOrCreate(
-                        ['nama' => $item['Ingredient Name']],
+                        ['name' => $item['Ingredient Name']],
                         [
                             'fungsi' => $item['Function'],
-                            'kategori_id' => $kategori->id
+                            'resiko_id' => $resiko->id
+
                         ]
                     );
 
@@ -109,7 +115,7 @@ class AnalyzeSkincareController extends BaseController
                         ['nama' => $rekom['name']],
                         [
                             'brand' => $rekom['brand'],
-                            'kategori_id' => $rekomKategori->id
+                            'kategoris_id' => $rekomKategori->id
                         ]
                     );
 
@@ -125,7 +131,7 @@ class AnalyzeSkincareController extends BaseController
                         $namaBahan = trim($ing);
                         $kandungan = Kandungan::firstOrCreate(
                             ['nama' => $namaBahan],
-                            ['fungsi' => 'Unknown', 'kategori_id' => $rekomKategori->id]
+                            ['fungsi' => 'Unknown', 'kategoris_id' => $rekomKategori->id]
                         );
 
                         DB::table('kandungan_produk')->updateOrInsert([
