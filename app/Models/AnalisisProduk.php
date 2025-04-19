@@ -12,8 +12,6 @@ class AnalisisProduk extends Model
         'user_id',
         'produk_id',
         'analisis',
-        'created_at',
-        'updated_at',
     ];
 
     public function produk()
