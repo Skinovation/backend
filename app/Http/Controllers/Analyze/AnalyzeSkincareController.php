@@ -42,8 +42,8 @@ class AnalyzeSkincareController extends BaseController
             // Kirim data ke API HuggingFace
             $response = $request->hasFile('image')
                 ? Http::attach('image', file_get_contents($fullPath), basename($fullPath))
-                    ->post('https://huggingface.co/spaces/Maulidaaa/skicare_analyze', [])
-                : Http::asForm()->post('https://huggingface.co/spaces/Maulidaaa/skicare_analyze', [
+                    ->post('https://maulidaaa-skincare.hf.space/analyze', [])
+                : Http::asForm()->post('https://maulidaaa-skincare.hf.space/analyze', [
                     'ingredients' => $request->input('ingredients')
                 ]);
 
