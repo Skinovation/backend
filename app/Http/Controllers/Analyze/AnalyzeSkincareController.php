@@ -13,7 +13,6 @@ use Illuminate\Support\Facades\DB;
 use App\Models\Resiko;
 use App\Models\Kandungan;
 use App\Models\KandunganProduk;
-use App\Models\RekomendasiProduk;
 use Illuminate\Support\Facades\Log;
 
 class AnalyzeSkincareController extends BaseController
@@ -21,75 +20,67 @@ class AnalyzeSkincareController extends BaseController
     public function Analyze(Request $request)
     {
         try {
-            Log::info('Analisis produk dimulai');
+            Log::info('🔍 Memulai analisis produk skincare');
 
-            // Validasi input
             $validated = $request->validate([
                 'image' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
-                'ingredients' => 'string',
+                'ingredients' => 'string|nullable',
                 'product_name' => 'required|string',
                 'product_brand' => 'required|string',
                 'product_category' => 'required|string',
             ]);
 
-            // Cek apakah ada gambar atau bahan
             if (!$request->hasFile('image') && !$request->input('ingredients')) {
-                Log::warning('Tidak ada gambar atau bahan yang ditemukan');
-                return $this->sendError('Gambar atau bahan tidak ditemukan, isi salah satu', [], 422);
+                return $this->sendError('Gambar atau daftar bahan harus diisi salah satu.', [], 422);
             }
 
-            // Simpan gambar jika ada
-            $fullPath = null;
+            $imagePath = null;
+            $imageUrl = null;
+
             if ($request->hasFile('image')) {
-                $path = $request->file('image')->store('images');
-                $fullPath = storage_path('app/' . $path);
-                Log::info('Gambar berhasil disimpan di: ' . $fullPath);
+                // Simpan ke storage/app/public/images
+                $path = $request->file('image')->store('images', 'public');
+
+                // URL untuk diakses publik
+                $imagePath = 'storage/' . $path;
+                $imageUrl = asset($imagePath);
+
+                Log::info('🖼️ Gambar disimpan di: ' . public_path($imagePath));
             }
 
-            // Kirim data ke API
-            Log::info('Mengirim data ke API HuggingFace');
+            // Kirim ke HuggingFace API
+            Log::info('📡 Mengirim data ke API HuggingFace...');
             $response = $request->hasFile('image')
                 ? Http::timeout(60)
-                    ->attach('image', file_get_contents($fullPath), basename($fullPath))
-                    ->post('https://maulidaaa-skincare.hf.space/analyze', [])
+                    ->attach('image', file_get_contents(public_path($imagePath)), basename($imagePath))
+                    ->post('https://maulidaaa-skincare.hf.space/analyze')
                 : Http::timeout(60)
-                    ->asForm()->post('https://maulidaaa-skincare.hf.space/analyze', [
+                    ->asForm()
+                    ->post('https://maulidaaa-skincare.hf.space/analyze', [
                         'ingredients' => $request->input('ingredients')
                     ]);
 
             if (!$response->successful()) {
-                Log::error('Gagal mengirim data ke API', [
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
-                return $this->sendError('Gagal mengirim data ke API lain', [
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
+                Log::error('❌ Gagal dari API HuggingFace', ['status' => $response->status(), 'body' => $response->body()]);
+                return $this->sendError('Gagal memproses data dari API eksternal.', [], $response->status());
             }
 
-            $data = $response->json();
-            Log::info('Data berhasil diterima dari API');
+            $resultData = $response->json();
+            Log::info('✅ Data berhasil diterima dari API');
 
             DB::beginTransaction();
 
-            // Simpan kategori produk
+            // Simpan produk & kategori
             $kategori = Kategori::firstOrCreate(['nama' => $request->input('product_category')]);
-            Log::info('Kategori produk: ' . $kategori->nama);
-
-            // Simpan produk utama
             $produk = Produk::create([
                 'nama' => $request->input('product_name'),
                 'brand' => $request->input('product_brand'),
                 'kategoris_id' => $kategori->id,
             ]);
-            Log::info('Produk disimpan: ' . $produk->nama);
 
+            // Simpan analisis
             $user = auth()->guard('api')->user();
-
-            // Simpan analisis efek
-            $analisis = $data['Predicted After Use Effects']['description'] ?? 'Tidak ada efek terdeteksi';
-            Log::info('Analisis efek: ' . $analisis);
+            $analisis = $resultData['Predicted After Use Effects']['description'] ?? 'Tidak ada efek terdeteksi';
 
             AnalisisProduk::create([
                 'user_id' => $user->id,
@@ -97,25 +88,17 @@ class AnalyzeSkincareController extends BaseController
                 'analisis' => $analisis,
             ]);
 
-            // Simpan kandungan dan pivot-nya
-            if (!empty($data['Ingredient Analysis'])) {
-                foreach ($data['Ingredient Analysis'] as $item) {
-                    Log::info('Menganalisis kandungan: ' . $item['Ingredient Name']);
-
+            // Simpan Kandungan dari API
+            if (!empty($resultData['Ingredient Analysis'])) {
+                foreach ($resultData['Ingredient Analysis'] as $item) {
                     $resiko = Resiko::firstOrCreate(
                         ['deskripsi' => $item['Risk Description']],
-                        [
-                            'tingkat_resiko' => $item['Risk Level'],
-                            'code' => $item['Restriction']
-                        ]
+                        ['tingkat_resiko' => $item['Risk Level'], 'code' => $item['Restriction']]
                     );
 
                     $kandungan = Kandungan::firstOrCreate(
                         ['name' => $item['Ingredient Name']],
-                        [
-                            'fungsi' => $item['Function'],
-                            'resiko_id' => $resiko->id
-                        ]
+                        ['fungsi' => $item['Function'], 'resiko_id' => $resiko->id]
                     );
 
                     KandunganProduk::firstOrCreate([
@@ -125,64 +108,77 @@ class AnalyzeSkincareController extends BaseController
                 }
             }
 
-            // Simpan rekomendasi produk
-            if (!empty($data['Product Recommendations'])) {
-                foreach ($data['Product Recommendations'] as $rekom) {
-                    Log::info('Menyimpan rekomendasi produk: ' . $rekom['name']);
+            // Cek dan tambahkan bahan baru ke database
+            $inputIngredients = $request->input('ingredients');
+            $ingredients = array_filter(array_map('trim', explode(',', $inputIngredients)));
+            $bahanBaru = [];
 
-                    $rekomKategori = Kategori::firstOrCreate(['nama' => $rekom['type']]);
+            foreach ($ingredients as $namaBahan) {
+                if (!Kandungan::where('name', $namaBahan)->exists()) {
+                    $bahanBaru[] = $namaBahan;
+                }
+            }
 
-                    $rekomProduk = Produk::updateOrCreate(
-                        ['nama' => $rekom['name']],
-                        [
-                            'brand' => $rekom['brand'],
-                            'kategoris_id' => $rekomKategori->id
-                        ]
-                    );
+            if (!empty($bahanBaru)) {
+                $apiRes = Http::timeout(60)->post('https://maulidaaa-predict.hf.space/analyze', [
+                    'ingredients' => implode(', ', $bahanBaru)
+                ]);
 
-                    // Simpan hubungan rekomendasi
-                    RekomendasiProduk::firstOrCreate([
-                        'produk_id' => $produk->id,
-                        'produk_alternatif_id' => $rekomProduk->id
+                if ($apiRes->successful()) {
+                    foreach ($apiRes->json()['Ingredient Analysis'] as $item) {
+                        $resiko = Resiko::firstOrCreate(
+                            ['deskripsi' => $item['Risk Description']],
+                            ['tingkat_resiko' => $item['Risk Level'], 'code' => $item['Restriction']]
+                        );
+
+                        Kandungan::updateOrCreate(
+                            ['name' => $item['Ingredient Name']],
+                            ['fungsi' => $item['Function'], 'resiko_id' => $resiko->id]
+                        );
+                    }
+                } else {
+                    Log::warning('⚠️ API bahan prediksi gagal', ['status' => $apiRes->status()]);
+                }
+            }
+
+            // Hubungkan semua kandungan ke produk
+            foreach ($ingredients as $namaBahan) {
+                $kandungan = Kandungan::where('name', $namaBahan)->first();
+                if ($kandungan) {
+                    KandunganProduk::firstOrCreate([
+                        'produks_id' => $produk->id,
+                        'kandungans_id' => $kandungan->id
                     ]);
-
-                    // // Simpan kandungan dari rekomendasi
-                    // $ingredients = explode(',', $rekom['ingredients']);
-                    // foreach ($ingredients as $ing) {
-                    //     $namaBahan = trim($ing);
-                    //     if (empty($namaBahan)) continue;
-
-                    //     Log::info('Memeriksa kandungan: ' . $namaBahan);
-                    //     $kandungan = Kandungan::firstOrCreate(
-                    //         ['name' => $namaBahan],
-                    //         [
-                    //             'fungsi' => null,
-                    //             'resiko_id' => null
-                    //         ]
-                    //     );
-
-                    //     KandunganProduk::firstOrCreate([
-                    //         'produks_id' => $rekomProduk->id,
-                    //         'kandungans_id' => $kandungan->id
-                    //     ]);
-                    // }
                 }
             }
 
             DB::commit();
-            Log::info('Data analisis berhasil disimpan');
+            Log::info('💾 Semua data berhasil disimpan');
 
-            return $this->sendResponse($data, 'Data berhasil dianalisis dan disimpan.');
+            if (isset($resultData['Predicted After Use Effects'])) {
+                unset($resultData['Predicted After Use Effects']['skor']);
+                unset($resultData['Predicted After Use Effects']['description']);
+                unset($resultData['Predicted After Use Effects']['label']);
+            }
+
+            $label = $resultData['Predicted After Use Effects']['label'] ?? 'Tidak ada efek terdeteksi';
+
+            return $this->sendResponse([
+                'produk' => [
+                    'nama' => $produk->nama,
+                    'brand' => $produk->brand,
+                    'kategori' => $kategori->nama,
+                    'image_url' => $imageUrl,
+                    'deskripsi' => $analisis,
+                    'label' => $label,
+                ],
+                'detail produk' => $resultData,
+            ], 'Analisis produk berhasil dilakukan.');
 
         } catch (\Exception $e) {
             DB::rollback();
-            Log::error('Terjadi kesalahan saat menganalisis produk', [
-                'error' => $e->getMessage()
-            ]);
-            return $this->sendError('Terjadi kesalahan saat menganalisis produk', [
-                'error' => $e->getMessage()
-            ], 500);
+            Log::error('❗ Terjadi error saat analisis produk', ['message' => $e->getMessage()]);
+            return $this->sendError('Terjadi kesalahan saat memproses data.', ['error' => $e->getMessage()], 500);
         }
     }
-
 }
