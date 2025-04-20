@@ -38,17 +38,13 @@ class AnalyzeSkincareController extends BaseController
             $imageUrl = null;
 
             if ($request->hasFile('image')) {
-                // Simpan ke storage/app/public/images
                 $path = $request->file('image')->store('images', 'public');
-
-                // URL untuk diakses publik
                 $imagePath = 'storage/' . $path;
                 $imageUrl = asset($imagePath);
 
                 Log::info('🖼️ Gambar disimpan di: ' . public_path($imagePath));
             }
 
-            // Kirim ke HuggingFace API
             Log::info('📡 Mengirim data ke API HuggingFace...');
             $response = $request->hasFile('image')
                 ? Http::timeout(60)
@@ -68,111 +64,114 @@ class AnalyzeSkincareController extends BaseController
             $resultData = $response->json();
             Log::info('✅ Data berhasil diterima dari API');
 
-            DB::beginTransaction();
-
-            // Simpan produk & kategori
-            $kategori = Kategori::firstOrCreate(['nama' => $request->input('product_category')]);
-            $produk = Produk::create([
-                'nama' => $request->input('product_name'),
-                'brand' => $request->input('product_brand'),
-                'kategoris_id' => $kategori->id,
-            ]);
-
-            // Simpan analisis
             $user = auth()->guard('api')->user();
+            $isLoggedIn = $user !== null;
+
+            $produk = null;
+            $kategori = null;
             $analisis = $resultData['Predicted After Use Effects']['description'] ?? 'Tidak ada efek terdeteksi';
 
-            AnalisisProduk::create([
-                'user_id' => $user->id,
-                'produk_id' => $produk->id,
-                'analisis' => $analisis,
-            ]);
+            if ($isLoggedIn) {
+                DB::beginTransaction();
 
-            // Simpan Kandungan dari API
-            if (!empty($resultData['Ingredient Analysis'])) {
-                foreach ($resultData['Ingredient Analysis'] as $item) {
-                    $resiko = Resiko::firstOrCreate(
-                        ['deskripsi' => $item['Risk Description']],
-                        ['tingkat_resiko' => $item['Risk Level'], 'code' => $item['Restriction']]
-                    );
-
-                    $kandungan = Kandungan::firstOrCreate(
-                        ['name' => $item['Ingredient Name']],
-                        ['fungsi' => $item['Function'], 'resiko_id' => $resiko->id]
-                    );
-
-                    KandunganProduk::firstOrCreate([
-                        'produks_id' => $produk->id,
-                        'kandungans_id' => $kandungan->id
-                    ]);
-                }
-            }
-
-            // Cek dan tambahkan bahan baru ke database
-            $inputIngredients = $request->input('ingredients');
-            $ingredients = array_filter(array_map('trim', explode(',', $inputIngredients)));
-            $bahanBaru = [];
-
-            foreach ($ingredients as $namaBahan) {
-                if (!Kandungan::where('name', $namaBahan)->exists()) {
-                    $bahanBaru[] = $namaBahan;
-                }
-            }
-
-            if (!empty($bahanBaru)) {
-                $apiRes = Http::timeout(60)->post('https://maulidaaa-predict.hf.space/analyze', [
-                    'ingredients' => implode(', ', $bahanBaru)
+                $kategori = Kategori::firstOrCreate(['nama' => $request->input('product_category')]);
+                $produk = Produk::create([
+                    'nama' => $request->input('product_name'),
+                    'brand' => $request->input('product_brand'),
+                    'kategoris_id' => $kategori->id,
                 ]);
 
-                if ($apiRes->successful()) {
-                    foreach ($apiRes->json()['Ingredient Analysis'] as $item) {
+                AnalisisProduk::create([
+                    'user_id' => $user->id,
+                    'produk_id' => $produk->id,
+                    'analisis' => $analisis,
+                ]);
+
+                if (!empty($resultData['Ingredient Analysis'])) {
+                    foreach ($resultData['Ingredient Analysis'] as $item) {
                         $resiko = Resiko::firstOrCreate(
                             ['deskripsi' => $item['Risk Description']],
                             ['tingkat_resiko' => $item['Risk Level'], 'code' => $item['Restriction']]
                         );
 
-                        Kandungan::updateOrCreate(
+                        $kandungan = Kandungan::firstOrCreate(
                             ['name' => $item['Ingredient Name']],
                             ['fungsi' => $item['Function'], 'resiko_id' => $resiko->id]
                         );
+
+                        KandunganProduk::firstOrCreate([
+                            'produks_id' => $produk->id,
+                            'kandungans_id' => $kandungan->id
+                        ]);
                     }
-                } else {
-                    Log::warning('⚠️ API bahan prediksi gagal', ['status' => $apiRes->status()]);
                 }
-            }
 
-            // Hubungkan semua kandungan ke produk
-            foreach ($ingredients as $namaBahan) {
-                $kandungan = Kandungan::where('name', $namaBahan)->first();
-                if ($kandungan) {
-                    KandunganProduk::firstOrCreate([
-                        'produks_id' => $produk->id,
-                        'kandungans_id' => $kandungan->id
+                $inputIngredients = $request->input('ingredients');
+                $ingredients = array_filter(array_map('trim', explode(',', $inputIngredients)));
+                $bahanBaru = [];
+
+                foreach ($ingredients as $namaBahan) {
+                    if (!Kandungan::where('name', $namaBahan)->exists()) {
+                        $bahanBaru[] = $namaBahan;
+                    }
+                }
+
+                if (!empty($bahanBaru)) {
+                    $apiRes = Http::timeout(60)->post('https://maulidaaa-predict.hf.space/analyze', [
+                        'ingredients' => implode(', ', $bahanBaru)
                     ]);
-                }
-            }
 
-            DB::commit();
-            Log::info('💾 Semua data berhasil disimpan');
+                    if ($apiRes->successful()) {
+                        foreach ($apiRes->json()['Ingredient Analysis'] as $item) {
+                            $resiko = Resiko::firstOrCreate(
+                                ['deskripsi' => $item['Risk Description']],
+                                ['tingkat_resiko' => $item['Risk Level'], 'code' => $item['Restriction']]
+                            );
+
+                            Kandungan::updateOrCreate(
+                                ['name' => $item['Ingredient Name']],
+                                ['fungsi' => $item['Function'], 'resiko_id' => $resiko->id]
+                            );
+                        }
+                    } else {
+                        Log::warning('⚠️ API bahan prediksi gagal', ['status' => $apiRes->status()]);
+                    }
+                }
+
+                foreach ($ingredients as $namaBahan) {
+                    $kandungan = Kandungan::where('name', $namaBahan)->first();
+                    if ($kandungan) {
+                        KandunganProduk::firstOrCreate([
+                            'produks_id' => $produk->id,
+                            'kandungans_id' => $kandungan->id
+                        ]);
+                    }
+                }
+
+                DB::commit();
+                Log::info('💾 Semua data berhasil disimpan');
+            } else {
+                Log::info('🔒 User tidak login, data tidak disimpan ke database');
+            }
 
             if (isset($resultData['Predicted After Use Effects'])) {
                 unset($resultData['Predicted After Use Effects']['skor']);
                 unset($resultData['Predicted After Use Effects']['description']);
-                
             }
 
             $label = $resultData['Predicted After Use Effects']['labels'];
 
             return $this->sendResponse([
                 'produk' => [
-                    'nama' => $produk->nama,
-                    'brand' => $produk->brand,
-                    'kategori' => $kategori->nama,
+                    'nama' => $request->input('product_name'),
+                    'brand' => $request->input('product_brand'),
+                    'kategori' => $request->input('product_category'),
                     'image_url' => $imageUrl,
                     'deskripsi' => $analisis,
                     'label' => $label,
                 ],
                 'detail produk' => $resultData,
+                'data_disimpan' => $isLoggedIn,
             ], 'Analisis produk berhasil dilakukan.');
 
         } catch (\Exception $e) {
