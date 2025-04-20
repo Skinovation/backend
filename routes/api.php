@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Analyze\AnalyzeSkincareController;
+use App\Http\Controllers\Analyze\AnalyzeHistoryController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -19,4 +20,5 @@ Route::group(['prefix' => 'auth'], function () {
 
 Route::group(['prefix' => 'analyze'], function () {
     Route::post('/skincare', [AnalyzeSkincareController::class, 'Analyze'])->name('analyze.skincare');
+    Route::get('/history', [AnalyzeHistoryController::class, 'index'])->name('analyze.history');
 });
