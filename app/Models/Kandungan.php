@@ -21,4 +21,10 @@ class Kandungan extends Model
     {
         return $this->hasMany(Produk::class, 'kandungans_id', 'id');
     }
+
+    public function resiko()
+{
+    return $this->belongsTo(\App\Models\Resiko::class, 'resiko_id');
+}
+
 }

@@ -21,4 +21,5 @@ Route::group(['prefix' => 'auth'], function () {
 Route::group(['prefix' => 'analyze'], function () {
     Route::post('/skincare', [AnalyzeSkincareController::class, 'Analyze'])->name('analyze.skincare');
     Route::get('/history', [AnalyzeHistoryController::class, 'index'])->name('analyze.history');
+    Route::get('/history/{id}', [AnalyzeHistoryController::class, 'show'])->name('analyze.history.show');
 });

@@ -21,9 +21,13 @@ class KandunganProduk extends Model
     {
         return $this->belongsTo(Resiko::class, 'resiko_id');
     }
+    public function kandungan()
+    {
+        return $this->belongsTo(Kandungan::class, 'kandungans_id');
+    }
 
     public function produk()
     {
-        return $this->hasMany(Produk::class, 'kandungans_id', 'id');
+        return $this->hasMany(Produk::class, 'produks_id', 'id');
     }
 }
